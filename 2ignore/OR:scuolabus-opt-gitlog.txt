@@ -1,0 +1,616 @@
+commit e4af49231167fd95cd143cabe23d12b22f8c1ca8
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 18:32:02 2026 +0200
+
+    chore: add local Claude Code skills used by this project's sessions
+    
+    Not project content — the implement/improve skills that sessions invoke
+    to drive the TDD workflow and architecture reviews.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit b09cbd0eead894b73018c8ecf62a74e1d56acbd3
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 18:25:53 2026 +0200
+
+    docs(plan): specify Phase 5 in full, and fix the two seams before it lands
+    
+    Phase 5 writes the first module that consumes all the others. Every interface
+    the campaign driver touches is about to gain call sites, and the CSV it emits
+    is the interface Phase 6 reads back — §7 requires every figure to regenerate
+    from that file alone. Interface debt is cheap now and expensive in two phases,
+    so the plan settles those shapes before `run.py` exists rather than after.
+    
+    The architecture review of 2026-08-26 raised six deepening candidates. Each was
+    re-checked against the code before being folded in; two of them changed on
+    inspection, and two further findings came out of the check.
+    
+    ## New §5a — Phase 5 in five ordered steps
+    
+    Step 0 does the two interface changes while the suite is the only thing holding
+    the call sites:
+    
+      (a) `Geometry` gains `name`; `grasp`, `tabu_search`, `memetic` and
+          `solve_exact` drop the `instance` parameter that no implementation reads.
+          65 call sites today, all green. The campaign needs the instance identity
+          as its best-known-registry key, and this hands it over on the object the
+          solvers already take instead of making the driver carry a second one with
+          nothing checking the two agree.
+    
+      (b) The shared working solution moves from `grasp.py` to
+          `heuristics/working.py`. H2 and H3 currently import `Working` and `vnd`
+          *from H1's module*, so deleting `grasp.py` breaks the other two methods.
+          For a project whose central claim is three distinct methods, an examiner
+          reading `from ...grasp import` inside `tabu.py` sees H2 built on H1. Pure
+          move; the gate is that the suite passes with no test edited but its
+          imports.
+    
+    Steps 1–4 then build `families.py`, `records.py`, the grading pass and the
+    driver — modules Phase 5 has to write regardless, which is why choosing their
+    shape now costs nothing.
+    
+    ## What changed against the review
+    
+    The review's TourCache candidate is declined. It suggested measuring, then
+    possibly wiring the cache into H1's restart loop to justify base.py's "all
+    three heuristics" claim. The code says otherwise: `Working.reoptimise` runs
+    `local_search` on the carried tour and never calls `route()`, and nothing in
+    H1 or H2 calls `from_served`, so neither method re-routes a stop set at all —
+    there is nothing for a memo to return. The claim is stale prose predating the
+    Phase 2 decision to carry tours instead of re-routing sets (ADR-0007). Narrow
+    the docstring to H3; do not widen the implementation to match old prose. This
+    also avoids invalidating every number in §8's tuning table.
+    
+    The review's family list kept `small` (30x15) in Tier 2. It is Tier 1:
+    |N|=15 sits inside `EXACT_MAX_STOPS`, so that family has a computable optimum
+    and a best-known gap would have understated what the project can prove. The
+    original list predates `exact.py` and assigned tiers by size intuition. Tier is
+    now derived — `|N| <= HELD_KARP_MAX_STOPS` — and asserted, so a row claiming
+    tier 1 at |N|=40 fails a test instead of reaching a plot axis. Tier 2 begins at
+    `medium`.
+    
+    That correction changes the campaign's headline finding. Phase 4 found all
+    three methods hitting the exact optimum on every 20x12 instance, which read as
+    "Tier 1 cannot separate them". With `small` promoted and `tiny-wide` (30x18)
+    added on Phase 4's timing evidence, the same zeros support a far stronger
+    sentence: all three methods are provably optimal on every instance up to
+    |N|=18, and the separation lives where no optimum exists. Both tiers are
+    needed to say that.
+    
+    Two findings from the vetting pass, beyond the review:
+    
+      - `Working.from_served` has no production caller; `memetic._working` does the
+        same job through the `TourCache`. It gains an optional cache parameter and
+        absorbs the private helper, so one documented function builds a `Working`
+        from a bare stop set.
+      - The tier invariant was enforceable only by attention. It is now the family
+        table's job: the tier selects the gap function, so a Tier 2 row cannot
+        reach `optimality_gap`.
+    
+    ## The open design question, settled
+    
+    The review left one question open: gaps are two-pass, because the Tier 2
+    reference is unknown until every method x seed has run — either the driver
+    rewrites the file, or the gap columns leave the CSV and Phase 6 derives them.
+    
+    Settled as: the driver appends raw rows as it goes, and a `--grade` pass fills
+    the gap columns from the finished file. Dropping the columns was rejected
+    because Phase 6 would then have to re-implement the tier-to-gap-function
+    dispatch, which is the exact invariant the family table exists to make
+    unrepresentable — one rule, one implementation. Grading from the file rather
+    than from memory additionally makes the campaign resumable (a crash at run 24
+    of 30 currently loses the whole reference) and lets Phase 6 re-grade without
+    re-running any search. `gap_kind` travels in the CSV so a figure reads its axis
+    label off the data instead of deciding it — ADR-0008 surviving to the plot.
+    
+    This needs `BestKnown.from_rows` in bounds.py as the mirror of the existing
+    `rows()`, giving the registry two adapters: in-memory for tests, CSV for the
+    campaign.
+    
+    ## Also
+    
+    - §7 gains four Phase 5 gates: the move is a move, the tier is not a judgement,
+      the schema is single-sourced, grading is idempotent and round-trips.
+    - §8 records deviations 5–8 for the interface changes, so the report matches
+      the code rather than the original sketch.
+    - `docs/adr/README.md` no longer calls the review candidates unsettled — they
+      are plan now, and each becomes an ADR once built and green.
+    
+    No source file changed. Suite green at 559 passed before and after.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit 69601e0f54f672e8296a6fe3da2885589b99c9fc
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 18:18:15 2026 +0200
+
+    docs: separate the project's vocabulary, decisions and handover state
+    
+    Three kinds of prose had accumulated in one file. `2resume.md` was carrying
+    the session-handover state (where the work stands, what to do next), the
+    domain vocabulary (what a "cover", a "tour", a "tier" actually mean), and
+    fifteen numbered design rationales that explain why load-bearing code is
+    shaped the way it is. Those three have different readers, different
+    lifetimes, and different failure modes when stale, so they are now three
+    artefacts.
+    
+    CONTEXT.md — the ubiquitous language
+      One glossary the code, the tests, the plan and the report all share, plus
+      the map from the model's symbols in PLAN.md §1 to the identifiers that
+      implement them. It ends with the terms that must not be substituted:
+      "tour" not "route order", "served set" not "chosen stops", and above all
+      "best-known gap" not "optimality gap" outside Tier 1. Naming drift is how
+      a Tier 2 number ends up under a Tier 1 axis label, which is exactly the
+      error an OR examiner looks for first.
+    
+    docs/adr/ — fourteen decisions, one file each
+      Every rationale that was previously a numbered bullet in the handover is
+      now an ADR with its Context, Decision and Consequences. The point is to
+      let a later reader — human or model — distinguish "this was considered
+      and settled" from "nobody thought about this yet". Five of them
+      (0007 Working carries its tour, 0009 disjoint branching with no `seen`
+      set, 0010 exact refuses to degrade, 0011/0012 H3's repair-only evaluation
+      and clock-free generation loop) exist specifically because a plausible
+      simplification would reintroduce a defect that was already paid for once.
+      Each records the failure it prevents, so the temptation is answered where
+      it will be felt.
+    
+      The index also states what is deliberately NOT an ADR: the mandatory TDD
+      method is PLAN.md §0, because it governs every line rather than one
+      choice; and the architecture review's candidates are open proposals, not
+      decisions.
+    
+    2resume.md — handover only, and shorter for it
+      Now purely operational: suite state, git state, the immediate next action,
+      the module table, and the handover protocol itself. The rationale it used
+      to carry is not lost, it moved to docs/adr/ where it can be cited by
+      number. A handover file earns its keep by being read fully at the start of
+      every session; at 220 lines it had stopped being that.
+    
+    review reports/ — the architecture review of 2026-08-26
+      Committed because docs/adr/README.md cites it as the source of the open
+      proposals, and a dangling citation is worse than none. It is a read-only
+      survey taken at 559 green tests: six deepening candidates, of which the
+      first (collapse `(instance, geom)` into one handle before Phase 5 adds
+      call sites) is the only one whose cost strictly grows if deferred. Note
+      the report predates this commit and states that no CONTEXT.md and no
+      docs/adr/ exist — its closing recommendation to write them down is what
+      this commit does.
+    
+    No source file changed. Suite green at 559 passed before and after.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit 2c0e4c5288ac4accb772e176b2af09892d2a3e3d
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 17:39:29 2026 +0200
+
+    docs: close Phase 4 and point the handover at the campaign
+    
+    PLAN.md §0 requires the phase-level and keystroke-level views to move together,
+    so both are updated in one commit.
+    
+    Records what Phase 4 measured, which changes how Phase 5 should be designed
+    rather than merely confirming it.  All three heuristics return the exact optimum
+    on every one of ten seeded 20x12 instances at a 1s budget, so the Tier 1 family
+    produces a table of zeros and cannot separate the methods — that is a finding
+    for the report to state, not a broken comparison to fix, and the separation only
+    appears at 120x45 and above where no optimum is computable.  The trivial lower
+    bound sits at ~63% of the optimum, which is why §3 keeps it as context beneath
+    the Tier 2 gaps rather than as their reference.
+    
+    Also records that EXACT_MAX_STOPS is a conservative guardrail rather than a
+    performance wall (0.18s at |N|=18, where Held-Karp's cap actually binds), and
+    the counter-intuitive shape of the cost: loosely constrained instances are the
+    expensive ones, because few children means many minimal covers.
+    
+    Four new load-bearing decisions are written down with their reasons, since each
+    is one a fresh session would plausibly undo: why the enumerator needs no dedup
+    table, why stopping at the first feasible set still finds every minimal cover,
+    why max_stops is capped, and why optimality_gap raises where bks_gap does not.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit f7da79a2b56d1ad6ed8f79e6d6ae2beb4861e641
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 17:37:07 2026 +0200
+
+    feat(bounds): valid lower bound and a best-known-solution registry
+    
+    Tier 2 covers every instance too large for exact.py, which is every instance
+    large enough to be interesting.  Two pieces make the gaps reported there honest.
+    
+    The lower bound is closed-form and deliberately weak: every child must be served
+    by some stop in walking range, so the bus travels at least out to the nearest
+    such stop and back, and the worst child gives 2*max_b min_{n in C_b} d(s,n).
+    Measured against Tier 1 truth it sits at about 63% of the optimum, which is
+    loose — but a weak valid bound is worth more in a report than a tight invalid
+    one, and it costs nothing.
+    
+    The gap carries its own label instead of leaving that to whoever writes the axis
+    title three modules away.  PLAN.md §3 requires a gap against the best solution
+    anyone found to be reported as gap-to-best-known and never as gap-to-optimum,
+    because only one of those is provable here; encoding the reference in the value
+    is what makes mislabelling it require effort rather than inattention.
+    
+    optimality_gap additionally refuses a solution below its optimum.  A negative
+    optimality gap is never good news — it means the enumeration missed a cover or
+    the routing is wrong — so it raises where the number is computed rather than
+    appearing as an odd bar in a chart, the same reasoning that makes History refuse
+    a worsening incumbent.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit d700bca9b12eece92fe81a3caa5ec58966a216e0
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 17:36:55 2026 +0200
+
+    feat(exact): Tier 1 ground truth by minimal-cover enumeration
+    
+    Without a solver there is no LP relaxation and no Lagrangian bound, so the only
+    honest way to say "optimal" is to compute it: enumerate covers, route each one
+    exactly, keep the best.  Three facts make that finite enough to be worth doing.
+    Adding a stop can never shorten a tour, so only minimal covers can be optimal.
+    Branching on the most constrained uncovered child, with each branch forbidding
+    the options earlier branches took, partitions the space — every minimal cover is
+    generated, and none twice, so no memo table is needed at all.  And a spanning
+    tree over the stops already chosen lower-bounds every tour through any superset
+    of them, which prunes a partial cover the moment its tree passes the incumbent.
+    
+    This is evaluation infrastructure, not a fourth resolution method, and the
+    report must say so.
+    
+    Trusting it required checking it three ways rather than one.  It agrees with an
+    exhaustive subset-times-permutation search that shares none of its reasoning; it
+    reproduces a six-child instance whose optimum is 12 + 6*sqrt(2) on paper; and
+    across twenty seeded instances no heuristic ever beats it.  That last one is the
+    most valuable test in the suite and it is not vacuous — the plain greedy is
+    strictly above the optimum on five of the twenty, tabu on three — so the
+    inequality is constraining something real rather than holding by luck.
+    
+    The hand instance is six stops, not the five PLAN.md §7 sketched: the spec
+    requires three stops within epsilon of every child, so two separated clusters
+    need three stops each and five is geometrically impossible.
+    
+    max_stops is refused above the Held-Karp cap.  Raising it further would let the
+    search reach a cover it could only route heuristically, and an exact search that
+    silently falls back to a heuristic route is the one failure that would poison
+    every number downstream.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit 165baa2f4961af21294fc3a0d210753ff247d810
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 17:16:51 2026 +0200
+
+    docs: close Phase 3 and refresh the session handover file
+    
+    PLAN.md §0 requires the plan's phase-level view and 2resume.md's keystroke-level
+    view to move together, or they drift and the stale one gets believed.  Phase 3
+    is done, so both are rewritten to point at Phase 4 (exact.py, bounds.py) and the
+    handover file no longer describes a deliberate red suite that no longer exists.
+    
+    Records four things a fresh session would otherwise undo: that the alpha=0
+    greedy is not a minimal cover (which is what invalidated a written test's
+    premise), that H3 must polish incumbents at capture rather than at the end,
+    that H3's generation body must never read the budget, and why H3 evaluates only
+    feasible chromosomes instead of carrying §2's uncovered-children penalty.
+    
+    Also records the measured 2s comparison of all three methods, including the
+    two-orders-of-magnitude spread in iteration counts at equal wall-clock — which
+    is the evidence for §5 equalising time rather than iterations.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit addf854487d80d6630cd3c6da2a4cc002e33c5d5
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 17:14:46 2026 +0200
+
+    feat(memetic): H3, memetic algorithm with repair-based crossover
+    
+    Recombining two covers gene by gene almost always yields something that is not
+    a cover — that is the normal case here, not an edge case — so a repair operator
+    sits between crossover and evaluation: greedily add stops until every child is
+    covered, then drop what recombination made redundant.  Without it selection
+    spends the whole budget rediscovering feasibility instead of improving tours.
+    
+    What makes it memetic is that a share of the offspring are driven to a VND
+    local optimum and their improved chromosome is written back, so the population
+    searches the space of local optima rather than the far larger space of covers.
+    Fitness goes through TourCache: many distinct subsets recur across generations,
+    and unlike the trajectory methods nothing here needs a tour that stays monotone
+    under node deletion.
+    
+    Every incumbent is polished at capture rather than once at the end.  Polishing
+    is not order-preserving, so a better raw incumbent can polish to a worse tour
+    than a weaker one — deferring it would forfeit the guarantee that a longer run
+    is never worse than a shorter one.
+    
+    tests/test_memetic.py::test_repair_preserves_an_already_minimal_cover asserted
+    its premise wrongly: it built its "minimal" cover from the alpha=0 greedy, which
+    on that fixture leaves five of nine stops removable, contradicting the adjacent
+    test demanding repair always return an irredundant cover.  The setup now prunes
+    the cover first and asserts that it did, per the PLAN.md §0 rule that a wrong
+    test is fixed deliberately and on the record.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit a08ef4fc5551a4d54e3bbd689e2671dcaa9ed63f
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 17:14:34 2026 +0200
+
+    feat(tabu): H2, Tabu Search over the served stop set
+    
+    Descent alone stalls on this problem because repairing coverage and shortening
+    the tour pull in opposite directions: the route between two good covers usually
+    runs through covers that are not covers at all.  So the search is allowed to
+    leave feasible ground, and uncovered children are priced by an adaptive penalty
+    rather than forbidden.  The penalty tunes itself from observed behaviour — held
+    fixed, it is either so high the trajectory never explores or so low it never
+    returns.
+    
+    Moves are scored without routing.  An insertion cost comes from best_insertion
+    and a coverage change from the degree array, both proportional to the children
+    near a single stop, so only accepted moves and new incumbents pay for tour
+    re-optimisation.  That is what buys the iteration counts a tabu search needs.
+    
+    Working.from_served comes along here because a stop set can now arrive without
+    a tour attached; it is the decoder H3's operators will need.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit f32dc0ff7cd3dc8b64c0531833fb826cd3ad2f9d
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 15:45:25 2026 +0200
+
+    feat(grasp): H1, GRASP with Variable Neighbourhood Descent
+    
+    Each restart builds a solution with a randomised route-aware greedy, drives it
+    to a local optimum with VND, and keeps the best. Alpha is chosen reactively:
+    values that have produced good solutions get sampled more often.
+    
+    Candidates are scored by children newly covered per unit of insertion cost, so
+    the construction is aware of the tour it is building. Scoring by coverage alone
+    - the classic greedy set cover - optimises the wrong objective: the goal is a
+    short route, and six clustered stops can beat four scattered ones.
+    
+    The unit of work is a Working solution carrying its served set, its tour and
+    that tour's length together. This replaces an earlier set-based design that
+    scored candidates by re-routing through TourCache, which could not honour the
+    "never lengthens" contract: dropping a stop is only guaranteed non-increasing
+    for an optimal tour, and re-running nearest-neighbour on the smaller set is not
+    monotone. Editing a carried tour is, by the triangle inequality.
+    
+    VND orders its neighbourhoods by cost - reorder the tour, drop redundant stops,
+    then swap - and any success restarts from the cheapest, so expensive moves are
+    only tried when nothing cheaper is left. Swaps preserve coverage exactly by
+    intersecting the option sets of the children that depended solely on the
+    departing stop, so no infeasible candidate is ever evaluated. Termination is
+    guaranteed: swaps strictly shorten the tour, the others never lengthen it.
+    
+    The first restart always uses alpha=0, a deterministic pure greedy, so the
+    result can never be worse than the plain constructive heuristic however the
+    randomised restarts turn out.
+    
+    Measured against that greedy baseline at a 2s budget: 8.6% shorter on 30x15,
+    13.4% on 120x45, 26.4% on 300x100.
+    
+    44 tests.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit 3460a140c5a14f3c18167fc14a9347d736a69785
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 15:45:25 2026 +0200
+
+    feat(heuristics): shared budget, history and tour cache
+    
+    Machinery all three methods need, so the experiment driver can treat them
+    interchangeably and one plotting routine can serve all of them.
+    
+    Budget/BudgetTracker express stopping rules. A fair comparison between methods
+    has to equalise time rather than iterations, since an iteration means something
+    different in each, so the tracker is built around a wall-clock budget with
+    iteration and stagnation limits as extras. Its clock is injectable, which is
+    what lets the stopping logic be tested deterministically instead of by sleeping
+    and hoping. A Budget with no limit at all is rejected: a search that never
+    returns is a bug, not a default.
+    
+    History refuses to record a worsening incumbent. A minimisation run's best can
+    only improve, so this turns a class of bookkeeping bug into an error at the
+    point it happens rather than a strange-looking convergence plot later.
+    
+    TourCache memoises tour lengths on frozenset, since every method re-evaluates
+    the same stop subsets constantly - a rejected swap still costs a routing call.
+    Cached tours are handed out as tuples: a caller mutating one would silently
+    corrupt every later lookup, which the tests check directly.
+    
+    42 tests.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit 7ab1beee8e8456a156060aecbec603d36c6393c0
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 15:31:41 2026 +0200
+
+    feat(solution): solution container and feasibility oracle
+    
+    A solution is fully determined by its served stop set: with no capacity
+    constraint each child walks to the nearest served stop within epsilon, so the
+    assignment is derived rather than searched. validate_solution checks every
+    constraint of the model and is the single source of truth for feasibility, used
+    by the tests, the experiment driver and the plotting code, so a bug in a
+    heuristic surfaces as a validation error instead of a silently wrong number.
+    
+    The validator returns early once any stop id is out of bounds. Writing the tests
+    first is what exposed this: fed an out-of-range id, it recorded the problem and
+    then kept going, crashing with IndexError inside tour_length instead of raising
+    SolutionError. Every check after the id test indexes the distance matrices by
+    those ids, so there is nothing safe left to inspect. Ids appearing in the
+    assignment array are now validated too, which had no check at all.
+    
+    37 tests, written adversarially: each constraint in the model gets a solution
+    violating precisely that constraint and nothing else. A validator that only ever
+    sees valid input is untested.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit efa1878856f257c3eea2aba492fbe2af27531a93
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 15:31:41 2026 +0200
+
+    feat(cover): incremental coverage bookkeeping
+    
+    Every heuristic searches over subsets of stops, adding and dropping one at a
+    time. Recomputing "is every child still covered?" from scratch would be O(|B|)
+    per move and dominate the runtime, so CoverState maintains a per-child coverage
+    degree and updates it in time proportional to the children near the stop that
+    moved.
+    
+    The removable test built on that degree is the workhorse of the project: a stop
+    is removable exactly when every child it covers has degree >= 2. Because adding
+    a stop can never shorten a tour under the triangle inequality, an optimal
+    solution never serves a redundant stop, so dropping removable stops is an
+    always-safe improvement move.
+    
+    drop() deliberately allows the state to become infeasible - Tabu Search relies
+    on crossing infeasible ground - so coverage is the caller's responsibility.
+    
+    44 tests. The decisive one is the equivalence check: after any random sequence
+    of adds and drops, the incrementally maintained degrees must equal a from-scratch
+    recomputation. CoverState trades correctness-by-construction for speed, and
+    everything downstream trusts that invariant, so it is verified directly rather
+    than assumed.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit be26213dde71f955a90a0d12485c1d1b1a3b6a3a
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 15:31:26 2026 +0200
+
+    feat(tsp): routing toolkit with 2-opt, Or-opt and exact Held-Karp
+    
+    Constructive heuristics (nearest neighbour, cheapest insertion), local search
+    (2-opt and Or-opt), and an exact Held-Karp DP. Nothing here knows about children
+    or coverage: it works on a node subset and a distance matrix, so the same code
+    routes candidates inside every heuristic and inside the exact reference solver.
+    
+    A tour is a list of nodes whose first element is always the school, with the
+    return leg implicit. Pinning the depot at position 0 costs nothing, since a
+    cycle rotates freely, and lets local search skip any move that would displace it.
+    
+    2-opt scans all partners for a given i in one vectorised numpy expression rather
+    than using don't-look bits. The bits are conventionally held per city, but every
+    2-opt move reverses a segment and renumbers positions, so keeping them correct
+    needs a position-lookup table and is a classic source of subtle bugs. The
+    vectorised sweep gets most of the speed-up at these tour sizes with far less to
+    go wrong.
+    
+    Held-Karp performs each mask's transition as a single (k,k) min-plus reduction
+    instead of a Python double loop, which is the difference between a second and a
+    minute at k=15.
+    
+    128 tests: exact oracles (a unit square's optimum is 4.0, five collinear points
+    give 8.0), agreement with brute-force permutation for small n, and the
+    invariants that must hold for any input - local search never lengthens a tour,
+    never loses a node, never moves the depot, and never beats the exact optimum.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit 7553ef7cf593ce5747c8702170c81edf1f2b6007
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 15:31:26 2026 +0200
+
+    feat(distances): precomputed geometry and coverage sets
+    
+    Geometry precomputes, once per instance, the node distance matrix, the
+    child-to-stop walking matrix, and the coverage relation in both directions:
+    covers[n] lists the children a stop can serve, options[b] lists the stops a
+    child can reach. The heuristics need both directions in their inner loops, so
+    neither is derived on the fly.
+    
+    Keeping the metric behind this one module is what would let a road-network
+    distance matrix replace the Euclidean one later without touching any search
+    code.
+    
+    26 tests, including hand-computed distances (a wrong metric would still produce
+    plausible-looking tours), the epsilon boundary in both directions, and a check
+    that covers and options are exact transposes of each other.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit ac8326e80dbeb34ea537621743116e5d492b247e
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 15:31:12 2026 +0200
+
+    feat(instance): instance representation and seeded generator
+    
+    Instance holds children, stops, school and epsilon, and fixes the node indexing
+    convention used by the whole package: stops occupy 0..n_stops-1 and the school
+    sits at n_stops, so a stop id and its node id are the same integer.
+    
+    The generator enforces the specification's structural requirement by
+    construction rather than by filtering afterwards. Stops are placed first
+    (uniformly, or in Gaussian clusters to mimic residential districts), then each
+    child is drawn inside a viable anchor stop's epsilon-disc and kept only if at
+    least three stops end up in range.
+    
+    Anchor viability uses the necessary condition that three stops covering a common
+    point lie pairwise within 2*epsilon. It is deliberately not treated as
+    sufficient - three stops on an equilateral triangle of side 2*epsilon have
+    circumradius 2*epsilon/sqrt(3) > epsilon and cover no common point - so
+    rejection sampling still does the real work; the test is only there to prune
+    hopeless anchors in sparse clusters.
+    
+    suggest_epsilon inverts the expected-stops-in-a-disc formula so default radii
+    sit comfortably above the 3-stop threshold and sampling stays cheap.
+    
+    43 tests: the 3-stop property across sizes, seeds and both layouts; determinism;
+    JSON round-trips; and the failure paths, each with a hand-checkable oracle.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit 8f4cf41c0640f18e8ba2bcb8a7da3caa136894b2
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 15:31:12 2026 +0200
+
+    docs: design plan, mathematical model, and mandatory TDD policy
+    
+    PLAN.md is the single source of truth for the project and doubles as the design
+    record the written report is lifted from. It fixes the decisions that shape all
+    the code that follows:
+    
+    - The model (variables y/x/z, objective, constraints) is written up but never
+      handed to a solver: all three resolution methods are heuristics, which is
+      stricter than the course rules allow.
+    - With no bus capacity constraint the child assignment is not a real decision,
+      so the search space collapses to "pick a covering subset of stops, then order
+      it" - a Covering Tour Problem. The triangle inequality then makes any optimal
+      stop set a minimal cover, which every heuristic exploits as a free cleanup.
+    - Three methodologically distinct heuristics, one per group member: GRASP+VND,
+      Tabu Search, and a Memetic Algorithm.
+    - Optimality can still be measured without an ILP solver, but only in two
+      honest tiers: true optima from hand-written combinatorial search on small
+      instances, and gap-to-best-known everywhere else.
+    
+    Section 0 makes test-driven development mandatory and governs every later
+    section: test first, watch it fail, implement, watch it pass, and only then use
+    the routine. Tests are never weakened to reach green.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit c4bfe5146b5297b6d2f72ea1a147ec66634285ff
+Author: TheMonadGuy <enrico.albertini.2001@outlook.it>
+Date:   Wed Aug 26 15:30:54 2026 +0200
+
+    chore: initialise repository with the assigned problem statement
+    
+    Problem 10 "ScuolaBus I" from the Ricerca Operativa project list: assign each
+    child to a bus stop within a walking radius epsilon and route a single bus
+    through the stops that have children, ending at the school, minimising the
+    route length. Instances must give every child at least three stops in range.
+    
+    Adds the assignment text and the teacher's general specification verbatim, so
+    the graded requirements stay in the repository rather than in an inbox.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>

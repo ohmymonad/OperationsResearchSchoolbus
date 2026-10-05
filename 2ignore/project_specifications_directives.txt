@@ -1,0 +1,33 @@
+
+
+ISTRUZIONI: LEGGERE ATTENTAMENTE
+Nello svolgimento del progettino è possibile utilizzare librerie disponibili
+per il linguaggio scelto sia per la gestione delle strutture dati che per
+l’implementazione di specifici passi dell’algoritmo quando questo lo
+preveda, ma non per l’intero problema. Es.** se per valutare il valore della
+funzione obiettivo va risolto un problema di cammino minimo si può usare
+una libreria che lo implementa, a patto di essere consapevoli di come operi
+la libreria scelta.**
+Se non indicato diversamente,
+1) descrivere il problema in modo astratto, utilizzando un linguaggio
+(pseudo) matematico, definendo le decisioni da prendere (variabili) la
+funzione obiettivo e i vincoli.
+2) scegliere almeno un approccio risolutivo per ogni componente del
+gruppo, tra quelli esaminati nel corso. Ogni altra cosa non verrà
+valutata.
+3) applicarlo alla soluzione del problema selezionato,
+4) sperimentandolo su almeno un’istanza.
+5) l’utilizzo di solver per problemi di PLI è permesso solo nell’ambito di
+math-euristiche, oppure per la stima dell’errore.
+Linguaggi (imperativi) di implementazione a scelta, secondo le proprie
+conoscenze. Non linguaggi logici (es Prolog, ASP)
+Istanze: in rete sono disponibili molti benchmark per i problemi proposti o
+da cui ottenere facilmente, con piccole modifiche / integrazioni, istanze
+per i problemi proposti. 
+In alternativa scrivere un generatore pseudo-causale di istanze.
+
+Esempio: la OR library curata da John Beasley,
+people.brunel.ac.uk/~mastjjb/jeb/info.html
+Per i problemi nella classe del VRP vedi
+http://neo.lcc.uma.es/vrp/vrp-instances/
+Per problemi di machine scheduling https://arxiv.org/abs/2308.12794

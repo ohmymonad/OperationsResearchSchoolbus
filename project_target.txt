@@ -1,0 +1,9 @@
+10. ScuolaBus I: (2) Il servizio di scuolabus di una scuola utilizza un
+solo autobus per il trasporto di tutti i i bambini B. 
+Nota la residenza p_b di ogni bambino b appartente a B e l’insieme N delle potenziali
+fermate dell’autobus, si deve assegnare ogni bambino a una
+fermata non + lontana di espilon da casa, in modo tale che l’itinerario
+dell’autobus che passa per tutte le fermate che hanno bambini
+assegnati e termina alla scuola sia di lunghezza minima. Utilizzare istanze in
+Utilizzare istanze in cui ogni bambino abbia almeno 3 fermate nel raggio di epsilon
+da casa

@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture review — ScuolaBus I</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 4 4; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+      .label { font-size: 0.625rem; letter-spacing: 0.08em; text-transform: uppercase; }
+      .mermaid { display: flex; justify-content: center; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans antialiased">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-14">
+
+      <!-- ══════════════════════════════ HEADER ══════════════════════════════ -->
+      <header class="space-y-6">
+        <div class="flex items-baseline justify-between border-b border-slate-300 pb-4">
+          <h1 class="font-serif text-4xl">Architecture review — <span class="italic">ScuolaBus I</span></h1>
+          <span class="text-sm text-slate-500 font-mono">2026-08-26</span>
+        </div>
+
+        <div class="flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-600">
+          <span><span class="inline-block w-4 h-3 border-2 border-slate-700 align-middle mr-1"></span>module</span>
+          <span><svg class="inline align-middle" width="26" height="8"><line class="seam" x1="0" y1="4" x2="26" y2="4" stroke="#64748b" stroke-width="2"/></svg> seam</span>
+          <span><svg class="inline align-middle" width="26" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="#dc2626" stroke-width="2"/><path d="M22 1 L26 4 L22 7 Z" fill="#dc2626"/></svg> leakage</span>
+          <span><span class="inline-block w-4 h-3 deep align-middle mr-1"></span>deep module</span>
+        </div>
+
+        <!-- status band -->
+        <section class="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="label text-slate-500">suite</div>
+            <div class="text-2xl font-semibold text-emerald-700">559</div>
+            <div class="text-xs text-slate-500">passing, 12.4s</div>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="label text-slate-500">commits</div>
+            <div class="text-2xl font-semibold">15</div>
+            <div class="text-xs text-slate-500">each green standalone</div>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="label text-slate-500">phases closed</div>
+            <div class="text-2xl font-semibold">0&ndash;4</div>
+            <div class="text-xs text-slate-500">model &rarr; exact ground truth</div>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="label text-slate-500">source</div>
+            <div class="text-2xl font-semibold">2&nbsp;250</div>
+            <div class="text-xs text-slate-500">lines over 11 modules</div>
+          </div>
+          <div class="rounded-lg border border-emerald-300 bg-emerald-50 p-4">
+            <div class="label text-emerald-700">next</div>
+            <div class="text-2xl font-semibold text-emerald-800">Phase 5</div>
+            <div class="text-xs text-emerald-700">experiment campaign</div>
+          </div>
+        </section>
+
+        <p class="text-sm text-slate-700 leading-relaxed max-w-3xl">
+          Everything below is judged against one fact: <strong>Phase 5 writes the first module that
+          consumes all the others</strong>. Every interface the campaign driver touches is about to
+          gain call sites and a CSV schema that Phase 6 reads back. Interface debt is cheap today and
+          expensive in two phases.
+        </p>
+      </header>
+
+      <!-- ══════════════════════════════ MAP ══════════════════════════════ -->
+      <section class="space-y-4">
+        <h2 class="font-serif text-2xl">The module graph as it stands</h2>
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+          <pre class="mermaid">
+flowchart TD
+  instance[instance.py] --> distances[distances.py]
+  distances --> cover[cover.py]
+  distances --> solution[solution.py]
+  tsp[tsp.py] --> solution
+  cover --> grasp[heuristics/grasp.py]
+  tsp --> grasp
+  base[heuristics/base.py] --> grasp
+  grasp -.->|Working, vnd| tabu[heuristics/tabu.py]
+  grasp -.->|Working, vnd| memetic[heuristics/memetic.py]
+  cover --> exact[exact.py]
+  tsp --> exact
+  distances --> bounds[bounds.py]
+  grasp --> run[["experiments/run.py — not written"]]
+  tabu --> run
+  memetic --> run
+  exact --> run
+  bounds --> run
+  run --> viz[["viz/ — not written"]]
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#7f1d1d;
+  classDef todo stroke-dasharray: 5 5,fill:#f8fafc,color:#475569;
+  class tabu,memetic,grasp leak
+  class run,viz todo
+          </pre>
+        </div>
+        <p class="text-sm text-slate-600">
+          Red: H2 and H3 reach into H1's module for their shared substrate. Dashed: the two modules
+          Phase 5 and Phase 6 still have to write &mdash; and the only two places in the project where
+          an interface can still be chosen for free.
+        </p>
+      </section>
+
+      <!-- ══════════════════════════════ CANDIDATES ══════════════════════════════ -->
+      <section id="candidates" class="space-y-12">
+        <h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Deepening candidates</h2>
+
+        <!-- ─────────── C1 ─────────── -->
+        <article id="c1" class="space-y-5">
+          <div class="flex flex-wrap items-center gap-3">
+            <h3 class="font-serif text-xl">1. Collapse <code class="font-mono text-base">(instance, geom)</code> into one case handle</h3>
+            <span class="text-xs font-semibold px-2 py-1 rounded bg-emerald-600 text-white">Strong</span>
+            <span class="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700">in-process</span>
+          </div>
+
+          <div class="font-mono text-sm text-slate-600">
+            heuristics/grasp.py:271 &middot; heuristics/tabu.py:136 &middot; heuristics/memetic.py:256 &middot; exact.py:178 &middot; distances.py:22
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <!-- before -->
+            <div class="rounded-lg border border-slate-200 bg-white p-5">
+              <div class="label text-slate-500 mb-4">before &mdash; three things, held in sync by hand</div>
+              <div class="relative" style="height:250px">
+                <div class="absolute inset-x-0 top-0 border border-slate-400 rounded px-3 py-2 bg-slate-50">
+                  <div class="label text-slate-500">campaign driver</div>
+                  <div class="font-mono text-xs mt-1">grasp(instance, geom, budget, seed)</div>
+                </div>
+                <div class="absolute left-0 top-24 w-[30%] border border-slate-400 rounded px-2 py-3 text-center">
+                  <div class="label text-slate-500">Instance</div>
+                  <div class="text-[10px] text-slate-400 mt-1">.name</div>
+                </div>
+                <div class="absolute left-[35%] top-24 w-[30%] border-2 border-slate-700 rounded px-2 py-3 text-center">
+                  <div class="label text-slate-700">Geometry</div>
+                  <div class="text-[10px] text-slate-400 mt-1">everything read</div>
+                </div>
+                <div class="absolute right-0 top-24 w-[30%] border border-slate-400 rounded px-2 py-3 text-center">
+                  <div class="label text-slate-500">name: str</div>
+                  <div class="text-[10px] text-slate-400 mt-1">BKS key</div>
+                </div>
+                <svg class="absolute inset-0 w-full h-full pointer-events-none">
+                  <line class="seam" x1="16%" y1="152" x2="84%" y2="152" stroke="#dc2626" stroke-width="2"/>
+                  <text x="50%" y="172" text-anchor="middle" fill="#dc2626" font-size="11">nothing checks these three agree</text>
+                  <text x="16%" y="205" text-anchor="middle" fill="#94a3b8" font-size="11">never read</text>
+                  <text x="84%" y="205" text-anchor="middle" fill="#94a3b8" font-size="11">carried alongside</text>
+                </svg>
+              </div>
+            </div>
+            <!-- after -->
+            <div class="rounded-lg border border-slate-200 bg-white p-5">
+              <div class="label text-slate-500 mb-4">after &mdash; one handle carries identity</div>
+              <div class="relative" style="height:250px">
+                <div class="absolute inset-x-0 top-0 border border-slate-400 rounded px-3 py-2 bg-slate-50">
+                  <div class="label text-slate-500">campaign driver</div>
+                  <div class="font-mono text-xs mt-1">grasp(geom, budget, seed)</div>
+                </div>
+                <div class="absolute left-[15%] right-[15%] top-24 deep rounded px-3 py-5 text-center text-white">
+                  <div class="label text-slate-300">Geometry</div>
+                  <div class="text-[11px] text-slate-400 mt-2 font-mono leading-relaxed">
+                    name &middot; epsilon &middot; school_node<br/>node_dist &middot; walk &middot; covers &middot; options
+                  </div>
+                </div>
+                <svg class="absolute inset-0 w-full h-full pointer-events-none">
+                  <text x="50%" y="220" text-anchor="middle" fill="#059669" font-size="11">a mismatched pair is unrepresentable</text>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <div class="label text-slate-500 mb-1">Problem</div>
+              <p>All four solver entry points take <code class="font-mono">instance</code> and no implementation reads it &mdash; the interface is wider than the implementation needs, and nothing binds the pair.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Solution</div>
+              <p><code class="font-mono">build_geometry</code> copies <code class="font-mono">instance.name</code> onto <code class="font-mono">Geometry</code>; the four entry points drop the dead parameter.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Wins</div>
+              <ul class="list-disc list-inside space-y-1 text-slate-700">
+                <li>Dead argument leaves the interface</li>
+                <li>Locality: identity lives once</li>
+                <li>BKS key comes from the handle</li>
+                <li>69 call sites shrink</li>
+                <li>Silent mismatch stops existing</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="rounded border-l-4 border-amber-400 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            Timing: 69 call sites today, all covered by the green suite. Written after <code class="font-mono">run.py</code> and the driver's own call sites join them.
+          </div>
+        </article>
+
+        <!-- ─────────── C2 ─────────── -->
+        <article id="c2" class="space-y-5">
+          <div class="flex flex-wrap items-center gap-3">
+            <h3 class="font-serif text-xl">2. Lift the shared working state out of H1's module</h3>
+            <span class="text-xs font-semibold px-2 py-1 rounded bg-emerald-600 text-white">Strong</span>
+            <span class="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700">in-process</span>
+          </div>
+
+          <div class="font-mono text-sm text-slate-600">
+            heuristics/grasp.py:48&ndash;250 &middot; heuristics/tabu.py:26 &middot; heuristics/memetic.py:39 &middot; heuristics/base.py
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-white p-5">
+              <div class="label text-slate-500 mb-4">before &mdash; H2 and H3 import from H1</div>
+              <pre class="mermaid">
+flowchart TD
+  base[base.py<br/>Budget · History · TourCache] --> g
+  subgraph g[grasp.py]
+    W[Working · vnd · swap_stop<br/>randomized_greedy_construction<br/>203 lines]
+    H1[grasp — 76 lines]
+  end
+  g -.->|imports Working, vnd| T[tabu.py]
+  g -.->|imports Working, vnd| M[memetic.py]
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  class g,T,M leak
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-5">
+              <div class="label text-slate-500 mb-4">after &mdash; three methods, one substrate</div>
+              <pre class="mermaid">
+flowchart TD
+  base[base.py<br/>Budget · History · TourCache] --> W
+  W[working.py<br/>Working · vnd · construction] --> H1[grasp.py — H1]
+  W --> T[tabu.py — H2]
+  W --> M[memetic.py — H3]
+  classDef deep fill:#0f172a,color:#f8fafc,stroke:#0f172a,stroke-width:2px;
+  class W deep
+              </pre>
+            </div>
+          </div>
+
+          <!-- mass bar -->
+          <div class="rounded-lg border border-slate-200 bg-white p-5">
+            <div class="label text-slate-500 mb-3">grasp.py, 326 lines &mdash; what is actually H1</div>
+            <div class="flex h-10 rounded overflow-hidden text-[11px] text-white font-medium">
+              <div class="bg-slate-400 flex items-center justify-center" style="width:14%">imports 47</div>
+              <div class="bg-red-600 flex items-center justify-center" style="width:62%">shared substrate 203 &mdash; imported by H2 and H3</div>
+              <div class="bg-emerald-600 flex items-center justify-center" style="width:24%">H1 76</div>
+            </div>
+            <p class="text-xs text-slate-600 mt-3">
+              Deletion test: removing <code class="font-mono">grasp.py</code> breaks H2 and H3. It is not H1's module &mdash; it is the substrate with H1 attached.
+            </p>
+          </div>
+
+          <div class="grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <div class="label text-slate-500 mb-1">Problem</div>
+              <p>Two-thirds of H1's module is the substrate H2 and H3 depend on, so the seam runs through the middle of a file rather than between modules.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Solution</div>
+              <p>Move <code class="font-mono">Working</code>, <code class="font-mono">randomized_greedy_construction</code>, <code class="font-mono">vnd</code>, <code class="font-mono">swap_stop</code>, <code class="font-mono">drop_redundant_by_saving</code> into <code class="font-mono">heuristics/working.py</code>. Bind <code class="font-mono">geom</code> into <code class="font-mono">Working</code> while moving it &mdash; 26 call sites re-pass a geometry the object already holds.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Wins</div>
+              <ul class="list-disc list-inside space-y-1 text-slate-700">
+                <li>Seam matches PLAN &sect;4</li>
+                <li>Methods depend on substrate, not each other</li>
+                <li>Interface sheds a repeated argument</li>
+                <li>"Three distinct methods" survives review</li>
+                <li>Pure move &mdash; no behaviour changes</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- ─────────── C3 ─────────── -->
+        <article id="c3" class="space-y-5">
+          <div class="flex flex-wrap items-center gap-3">
+            <h3 class="font-serif text-xl">3. Give the campaign row one owning module</h3>
+            <span class="text-xs font-semibold px-2 py-1 rounded bg-emerald-600 text-white">Strong</span>
+            <span class="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700">in-process</span>
+          </div>
+
+          <div class="font-mono text-sm text-slate-600">
+            heuristics/base.py:213 <span class="text-slate-400">summary_row</span> &middot; exact.py:56 <span class="text-slate-400">ExactResult</span> &middot; experiments/run.py <span class="text-slate-400">unwritten</span>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-white p-5">
+              <div class="label text-slate-500 mb-4">before &mdash; the row assembled on the way past</div>
+              <div class="space-y-2">
+                <div class="border-l-4 border-slate-300 pl-3 py-2 bg-slate-50">
+                  <div class="label text-slate-500">base.py &middot; summary_row</div>
+                  <div class="font-mono text-[11px] text-slate-600">method length n_served iterations elapsed walk_*</div>
+                </div>
+                <div class="border-l-4 border-red-400 pl-3 py-2 bg-red-50">
+                  <div class="label text-red-700">exact.py &middot; ExactResult</div>
+                  <div class="font-mono text-[11px] text-red-800">no row at all &mdash; different shape</div>
+                </div>
+                <div class="border-l-4 border-red-400 pl-3 py-2 bg-red-50">
+                  <div class="label text-red-700">run.py &middot; inline</div>
+                  <div class="font-mono text-[11px] text-red-800">instance family tier seed budget<br/>n_children n_stops epsilon gap gap_label</div>
+                </div>
+                <div class="border-l-4 border-red-400 pl-3 py-2 bg-red-50">
+                  <div class="label text-red-700">viz/ &middot; assumed</div>
+                  <div class="font-mono text-[11px] text-red-800">reads column names from memory</div>
+                </div>
+                <div class="text-[11px] text-red-700 pt-1">four places to keep in step; drift is silent until a figure is wrong</div>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-5">
+              <div class="label text-slate-500 mb-4">after &mdash; one interface, both producers</div>
+              <div class="space-y-3">
+                <div class="deep rounded p-4 text-white">
+                  <div class="label text-slate-300">experiments/records.py</div>
+                  <div class="font-mono text-[11px] text-slate-300 mt-2 leading-relaxed">
+                    FIELDNAMES<br/>
+                    RunRecord.from_heuristic(res, geom, ctx)<br/>
+                    RunRecord.from_exact(res, geom, ctx)<br/>
+                    write_rows(path, rows)
+                  </div>
+                </div>
+                <div class="flex gap-3 text-center text-[11px]">
+                  <div class="flex-1 border border-slate-300 rounded py-2">run.py writes</div>
+                  <div class="flex-1 border border-slate-300 rounded py-2">viz/ reads</div>
+                </div>
+                <div class="text-[11px] text-emerald-700">schema drift becomes a test failure, not a wrong axis</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <div class="label text-slate-500 mb-1">Problem</div>
+              <p>The results CSV is the interface every Phase 6 figure reads &mdash; PLAN &sect;7 requires the figures to regenerate from it alone &mdash; and no module owns it.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Solution</div>
+              <p>A record module owns the field list and both constructors, so heuristic runs and Tier 1 exact runs land in one shape.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Wins</div>
+              <ul class="list-disc list-inside space-y-1 text-slate-700">
+                <li>Tests hit one interface</li>
+                <li>Exact and heuristic rows unify</li>
+                <li>Leverage: one schema, seven figures</li>
+                <li>Costs nothing &mdash; Phase 5 writes it anyway</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="rounded border-l-4 border-amber-400 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            Open design question for the grilling loop: gaps are two-pass &mdash; the Tier 2 reference is only known once every method &times; seed has run. Either the driver rewrites the file in a second pass, or the gap columns leave the CSV and Phase 6 derives them. Decide before the first row is written.
+          </div>
+        </article>
+
+        <!-- ─────────── C4 ─────────── -->
+        <article id="c4" class="space-y-5">
+          <div class="flex flex-wrap items-center gap-3">
+            <h3 class="font-serif text-xl">4. Make the tier a value, not a comment</h3>
+            <span class="text-xs font-semibold px-2 py-1 rounded bg-emerald-600 text-white">Strong</span>
+            <span class="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700">in-process</span>
+          </div>
+
+          <div class="font-mono text-sm text-slate-600">
+            bounds.py:112 <span class="text-slate-400">optimality_gap</span> &middot; bounds.py:186 <span class="text-slate-400">BestKnown.gap</span> &middot; experiments/families.py <span class="text-slate-400">unwritten</span>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-white p-5">
+              <div class="label text-slate-500 mb-4">before &mdash; the invariant lives in prose</div>
+              <div class="relative" style="height:230px">
+                <div class="absolute inset-x-0 top-0 border border-slate-400 rounded px-3 py-2 bg-slate-50 font-mono text-[11px]">
+                  for family in ["tiny","small","medium","large"]:
+                </div>
+                <div class="absolute inset-x-0 top-14 border-l-4 border-red-400 bg-red-50 px-3 py-2 font-mono text-[11px] text-red-900">
+                  # Tier 1 uses optimality_gap,<br/>
+                  # Tier 2 uses bks_gap &mdash; never mix
+                </div>
+                <div class="absolute left-0 top-36 w-[46%] border border-slate-400 rounded px-2 py-3 text-center text-[11px] font-mono">optimality_gap()</div>
+                <div class="absolute right-0 top-36 w-[46%] border border-slate-400 rounded px-2 py-3 text-center text-[11px] font-mono">bks_gap()</div>
+                <svg class="absolute inset-0 w-full h-full pointer-events-none">
+                  <text x="50%" y="215" text-anchor="middle" fill="#dc2626" font-size="11">a judgement call at every call site</text>
+                </svg>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-5">
+              <div class="label text-slate-500 mb-4">after &mdash; the table decides</div>
+              <div class="deep rounded p-4 text-white font-mono text-[11px] leading-relaxed">
+                <div class="label text-slate-300 font-sans mb-2">experiments/families.py</div>
+                <table class="w-full text-left text-slate-300">
+                  <tr class="text-slate-500"><th>family</th><th>|B|&times;|N|</th><th>tier</th><th>gap</th></tr>
+                  <tr><td>tiny</td><td>10&times;8</td><td>1</td><td class="text-emerald-400">exact</td></tr>
+                  <tr><td>small</td><td>30&times;15</td><td>2</td><td class="text-sky-400">bks</td></tr>
+                  <tr><td>medium</td><td>100&times;40</td><td>2</td><td class="text-sky-400">bks</td></tr>
+                  <tr><td>large</td><td>300&times;100</td><td>2</td><td class="text-sky-400">bks</td></tr>
+                </table>
+                <div class="text-slate-500 mt-3 font-sans">+ seeds, budget, clusters per row</div>
+              </div>
+              <p class="text-[11px] text-emerald-700 mt-3">the family reaches the CSV, so Phase 6 facets without a lookup</p>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <div class="label text-slate-500 mb-1">Problem</div>
+              <p>"Never label Tier 2 gaps as optimality gaps" is the project's sharpest invariant and it exists only as prose in PLAN &sect;5 and the handover.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Solution</div>
+              <p>One declarative table of families: generator arguments, seeds, budget, tier &mdash; and the tier selects the gap function.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Wins</div>
+              <ul class="list-disc list-inside space-y-1 text-slate-700">
+                <li>Mislabelled gap becomes unrepresentable</li>
+                <li>Leverage: one table drives generation and grading</li>
+                <li>Campaign shape reviewable at a glance</li>
+                <li><code class="font-mono">--quick</code> is a row filter, not a branch</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="rounded border-l-4 border-amber-400 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            Phase 4 measured the exact solver at 0.10&nbsp;s for |N|=16 and 0.18&nbsp;s for |N|=18, and found Tier 1 gaps of exactly 0.00% for all three methods at 20&times;12. The tiny family is worth widening to |N|=18 in the same table edit &mdash; it is the only lever that makes Tier 1 say anything.
+          </div>
+        </article>
+
+        <!-- ─────────── C5 ─────────── -->
+        <article id="c5" class="space-y-5">
+          <div class="flex flex-wrap items-center gap-3">
+            <h3 class="font-serif text-xl">5. Give the best-known registry a load seam</h3>
+            <span class="text-xs font-semibold px-2 py-1 rounded bg-amber-500 text-white">Worth exploring</span>
+            <span class="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700">local-substitutable</span>
+          </div>
+
+          <div class="font-mono text-sm text-slate-600">bounds.py:154&ndash;217 <span class="text-slate-400">BestKnown</span></div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="rounded-lg border border-slate-200 bg-white p-5">
+              <div class="label text-slate-500 mb-4">before &mdash; one-way</div>
+              <pre class="mermaid">
+sequenceDiagram
+  participant R as run.py
+  participant B as BestKnown
+  participant C as results.csv
+  R->>B: update × (methods × seeds)
+  Note over R,B: large family, 30 runs
+  R--xB: crash at run 24
+  B--xC: rows() never called
+  Note over C: reference lost, campaign restarts
+              </pre>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-5">
+              <div class="label text-slate-500 mb-4">after &mdash; round-trips</div>
+              <pre class="mermaid">
+sequenceDiagram
+  participant R as run.py
+  participant C as results.csv
+  participant B as BestKnown
+  R->>C: append row per run
+  R--xC: crash at run 24
+  R->>C: resume, append 25..30
+  C->>B: from_rows(read back)
+  B->>C: gaps in one final pass
+              </pre>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <div class="label text-slate-500 mb-1">Problem</div>
+              <p><code class="font-mono">rows()</code> writes out and nothing reads back, so the Tier 2 reference exists only inside one process that must survive the whole campaign.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Solution</div>
+              <p>Add <code class="font-mono">BestKnown.from_rows</code> as the mirror of <code class="font-mono">rows()</code>; the driver appends as it goes and rebuilds the registry from the file.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Wins</div>
+              <ul class="list-disc list-inside space-y-1 text-slate-700">
+                <li>Two adapters justify the seam: in-memory in tests, CSV in the campaign</li>
+                <li>Gaps become a pure function of the CSV</li>
+                <li>Phase 6 re-grades without re-running</li>
+                <li>A long campaign survives interruption</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- ─────────── C6 ─────────── -->
+        <article id="c6" class="space-y-5">
+          <div class="flex flex-wrap items-center gap-3">
+            <h3 class="font-serif text-xl">6. Resolve the <code class="font-mono text-base">TourCache</code> claim</h3>
+            <span class="text-xs font-semibold px-2 py-1 rounded bg-slate-500 text-white">Speculative</span>
+            <span class="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700">in-process</span>
+          </div>
+
+          <div class="font-mono text-sm text-slate-600">
+            heuristics/base.py:15,147 &middot; heuristics/grasp.py:70 &middot; heuristics/memetic.py:287
+          </div>
+
+          <div class="rounded-lg border border-slate-200 bg-white p-5">
+            <div class="label text-slate-500 mb-4">who actually constructs a TourCache</div>
+            <div class="space-y-2 text-[11px] font-mono">
+              <div class="flex items-center gap-3"><span class="w-20 text-slate-500">base.py:15</span><span class="flex-1 bg-red-50 border-l-4 border-red-400 px-2 py-1 text-red-800">"all three heuristics revisit the same stop subsets"</span></div>
+              <div class="flex items-center gap-3"><span class="w-20 text-slate-500">grasp.py</span><span class="flex-1 bg-slate-50 border-l-4 border-slate-300 px-2 py-1">mentions it in a docstring &mdash; never constructs one</span></div>
+              <div class="flex items-center gap-3"><span class="w-20 text-slate-500">tabu.py</span><span class="flex-1 bg-slate-50 border-l-4 border-slate-300 px-2 py-1">no reference at all</span></div>
+              <div class="flex items-center gap-3"><span class="w-20 text-slate-500">memetic.py</span><span class="flex-1 bg-emerald-50 border-l-4 border-emerald-400 px-2 py-1 text-emerald-800">TourCache(geom) &mdash; the only user</span></div>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-3 gap-5 text-sm">
+            <div>
+              <div class="label text-slate-500 mb-1">Problem</div>
+              <p>The module documents leverage it does not have: one of three heuristics uses it, and Phase 5 equalises wall-clock, so a re-route costs iterations rather than nothing.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Solution</div>
+              <p>Either wire the cache into H1's restart loop, or narrow the claim to H3. Measure first &mdash; H2 moves by incremental insertion delta rather than re-routing, so the cache may have nothing to give it.</p>
+            </div>
+            <div>
+              <div class="label text-slate-500 mb-1">Wins</div>
+              <ul class="list-disc list-inside space-y-1 text-slate-700">
+                <li>Claim matches implementation</li>
+                <li>If it lands: more restarts per second</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="rounded border-l-4 border-red-400 bg-red-50 px-4 py-2 text-sm text-red-900">
+            Hard constraint: wiring the cache in changes every number in PLAN &sect;8's tuning table and every result the campaign produces. Do it <em>before</em> the campaign or not at all &mdash; never between families.
+          </div>
+        </article>
+      </section>
+
+      <!-- ══════════════════════════════ LEFT ALONE ══════════════════════════════ -->
+      <section class="space-y-3">
+        <h2 class="font-serif text-2xl border-b border-slate-300 pb-2">Deliberately left alone</h2>
+        <div class="grid md:grid-cols-2 gap-3 text-sm">
+          <div class="rounded border border-slate-200 bg-white p-4">
+            <div class="font-mono text-slate-700">tsp.py &middot; cover.py &middot; solution.py</div>
+            <p class="text-slate-600 mt-1">Deep already: narrow interfaces over real implementations, and the heaviest-tested modules in the project (128 / 44 / 37). The deletion test fails on all three &mdash; removing any concentrates nothing, it just deletes work.</p>
+          </div>
+          <div class="rounded border border-slate-200 bg-white p-4">
+            <div class="font-mono text-slate-700">instance.py &middot; exact.py &middot; bounds.py</div>
+            <p class="text-slate-600 mt-1">Interfaces are small relative to what sits behind them &mdash; a rejection-sampling generator, a pruned minimal-cover enumeration, a labelled gap type. Only <code class="font-mono">exact.py</code>'s dead <code class="font-mono">instance</code> argument (candidate 1) and <code class="font-mono">BestKnown</code>'s missing load seam (candidate 5) are in scope.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════ TOP RECOMMENDATION ══════════════════════════════ -->
+      <section id="top-recommendation">
+        <div class="deep rounded-xl p-8 text-white space-y-4">
+          <div class="label text-emerald-400">top recommendation</div>
+          <h2 class="font-serif text-3xl">
+            <a href="#c1" class="underline decoration-emerald-500 decoration-2 underline-offset-4">Collapse <span class="font-mono text-2xl">(instance, geom)</span> into one case handle</a>
+          </h2>
+          <p class="text-slate-300 max-w-3xl leading-relaxed">
+            It is the only candidate whose cost strictly grows if deferred. Sixty-nine call sites today,
+            all held by a green suite; after Phase 5 the driver, the record module and the figures add
+            their own. The change is mechanical, and it hands the campaign the instance identity it
+            needs for the best-known registry instead of making it carry a third object alongside.
+          </p>
+          <p class="text-slate-400 text-sm max-w-3xl">
+            Then <a href="#c3" class="underline decoration-slate-500 underline-offset-2">candidate 3</a> and
+            <a href="#c4" class="underline decoration-slate-500 underline-offset-2">candidate 4</a> as Phase 5's
+            opening move &mdash; both are modules Phase 5 has to write regardless, so choosing their shape
+            now is free. <a href="#c2" class="underline decoration-slate-500 underline-offset-2">Candidate 2</a>
+            is a pure move and can ride along in any commit.
+          </p>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════ PLAN HANDOFF ══════════════════════════════ -->
+      <section class="space-y-4">
+        <h2 class="font-serif text-2xl border-b border-slate-300 pb-2">What each candidate changes in PLAN.md</h2>
+        <p class="text-sm text-slate-600">For the plan-update pass that runs before Phase 5 begins.</p>
+        <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-100 text-slate-600">
+              <tr>
+                <th class="text-left px-4 py-2 font-medium">Candidate</th>
+                <th class="text-left px-4 py-2 font-medium">PLAN.md sections</th>
+                <th class="text-left px-4 py-2 font-medium">Edit</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="px-4 py-3 font-medium">1 &mdash; case handle</td>
+                <td class="px-4 py-3 font-mono text-xs">&sect;4, &sect;8 deviations</td>
+                <td class="px-4 py-3 text-slate-600">Record that the solver interface is <code class="font-mono">geom</code>-only and why; add a deviation entry.</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 font-medium">2 &mdash; shared substrate</td>
+                <td class="px-4 py-3 font-mono text-xs">&sect;4 tree, &sect;2 "shared machinery"</td>
+                <td class="px-4 py-3 text-slate-600">Add <code class="font-mono">heuristics/working.py</code> to the tree; &sect;2 already promises this seam.</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 font-medium">3 &mdash; record module</td>
+                <td class="px-4 py-3 font-mono text-xs">&sect;4 tree, &sect;5 Phase 5, &sect;7</td>
+                <td class="px-4 py-3 text-slate-600">Name the module, fix the CSV field list, and settle the one-pass-vs-two-pass gap question.</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 font-medium">4 &mdash; family table</td>
+                <td class="px-4 py-3 font-mono text-xs">&sect;5 Phase 5, &sect;3, &sect;6</td>
+                <td class="px-4 py-3 text-slate-600">Turn the family list into the table's contents; widen tiny to |N|=18; state the Tier 1 zero-gap finding as a result.</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 font-medium">5 &mdash; load seam</td>
+                <td class="px-4 py-3 font-mono text-xs">&sect;5 Phase 5</td>
+                <td class="px-4 py-3 text-slate-600">Say the campaign is resumable and gaps are computed in a final pass.</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 font-medium">6 &mdash; TourCache</td>
+                <td class="px-4 py-3 font-mono text-xs">&sect;2, &sect;8 tuning table</td>
+                <td class="px-4 py-3 text-slate-600">Either narrow the claim, or note that the &sect;8 numbers were remeasured after wiring it in.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="rounded border-l-4 border-slate-400 bg-slate-100 px-4 py-3 text-sm text-slate-700">
+          No <code class="font-mono">CONTEXT.md</code> and no <code class="font-mono">docs/adr/</code> exist in this repo. The domain vocabulary
+          &mdash; instance, geometry, cover, served set, tour, tier, best-known &mdash; is consistent across the code and
+          worth writing down once, lazily, as candidates are settled.
+        </div>
+      </section>
+
+      <footer class="pt-6 border-t border-slate-300 text-xs text-slate-500">
+        Read-only review. 559 tests green at time of writing; no source file was modified.
+      </footer>
+    </main>
+  </body>
+</html>
